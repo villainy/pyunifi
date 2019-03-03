@@ -1,31 +1,36 @@
+"""
+File: controller.py
+Author: Caleb Dunn
+Email: finish.06@gmail.com
+Github: https://github.com/finish06/pyunifi/
+Description: UniFi Controller
+"""
+
 import json
 import logging
-import requests
-import shutil
-import time
 import warnings
+import shutil
 
+import requests
 
-"""For testing purposes:
-logging.basicConfig(filename='pyunifi.log', level=logging.WARN,
-                    format='%(asctime)s %(message)s')
-"""
-log = logging.getLogger(__name__)
-
+from time import time
 
 class APIError(Exception):
+    """ UniFi API exception
+    """
     pass
 
 
 def retry_login(func, *args, **kwargs):
     """To reattempt login if requests exception(s) occur at time of call"""
     def wrapper(*args, **kwargs):
+        log = logging.getLogger(__name__)
         try:
             try:
                 return func(*args, **kwargs)
             except (requests.exceptions.RequestException,
                     APIError) as err:
-                log.warning("Failed to perform %s due to %s" % (func, err))
+                log.warning("Failed to perform %s due to %s", func, err)
                 controller = args[0]
                 controller._login()
                 return func(*args, **kwargs)
@@ -34,7 +39,7 @@ def retry_login(func, *args, **kwargs):
     return wrapper
 
 
-class Controller(object):
+class Controller:
 
     """Interact with a UniFi controller.
 
@@ -69,6 +74,7 @@ class Controller(object):
         if float(version[1:]) < 4:
             raise APIError("%s controllers no longer supported" % version)
 
+        self.log = logging.getLogger(__name__)
         self.host = host
         self.port = port
         self.version = version
@@ -85,7 +91,7 @@ class Controller(object):
         self.session = requests.Session()
         self.session.verify = ssl_verify
 
-        log.debug('Controller for %s', self.url)
+        self.log.debug('Controller for %s', self.url)
         self._login()
 
     @staticmethod
@@ -96,8 +102,8 @@ class Controller(object):
                 raise APIError(obj['meta']['msg'])
         if 'data' in obj:
             return obj['data']
-        else:
-            return obj
+
+        return obj
 
     def _api_url(self):
         return self.url + 'api/s/' + self.site_id + '/'
@@ -105,41 +111,41 @@ class Controller(object):
     @retry_login
     def _read(self, url, params=None):
         # Try block to handle the unifi server being offline.
-        r = self.session.get(url, params=params)
-        return self._jsondec(r.text)
+        res = self.session.get(url, params=params)
+        return self._jsondec(res.text)
 
     def _api_read(self, url, params=None):
         return self._read(self._api_url() + url, params)
 
     @retry_login
     def _write(self, url, params=None):
-        r = self.session.post(url, json=params)
-        return self._jsondec(r.text)
+        res = self.session.post(url, json=params)
+        return self._jsondec(res.text)
 
     def _api_write(self, url, params=None):
         return self._write(self._api_url() + url, params)
 
     @retry_login
     def _update(self, url, params=None):
-        r = self.session.put(url, json=params)
-        return self._jsondec(r.text)
+        res = self.session.put(url, json=params)
+        return self._jsondec(res.text)
 
     def _api_update(self, url, params=None):
         return self._update(self._api_url() + url, params)
 
     def _login(self):
-        log.debug('login() as %s', self.username)
+        self.log.debug('login() as %s', self.username)
 
         # XXX Why doesn't passing in the dict work?
         params = {'username': self.username, 'password': self.password}
         login_url = self.url + 'api/login'
 
-        r = self.session.post(login_url, json=params)
-        if r.status_code is not 200:
-            raise APIError("Login failed - status code: %i" % r.status_code)
+        res = self.session.post(login_url, json=params)
+        if res.status_code != 200:
+            raise APIError("Login failed - status code: %i" % res.status_code)
 
     def _logout(self):
-        log.debug('logout()')
+        self.log.debug('logout()')
         self._api_write('logout')
 
     def switch_site(self, name):
@@ -231,13 +237,15 @@ class Controller(object):
         """
         return self._api_read('list/wlanconf')
 
-    def _run_command(self, command, params={}, mgr='stamgr'):
-        log.debug('_run_command(%s)', command)
+    def _run_command(self, command, params=None, mgr='stamgr'):
+        params = params or {}
+        self.log.debug('_run_command(%s)', command)
         params.update({'cmd': command})
         return self._write(self._api_url() + 'cmd/' + mgr, params=params)
 
-    def _mac_cmd(self, target_mac, command, mgr='stamgr', params={}):
-        log.debug('_mac_cmd(%s, %s)', target_mac, command)
+    def _mac_cmd(self, target_mac, command, mgr='stamgr', params=None):
+        params = params or {}
+        self.log.debug('_mac_cmd(%s, %s)', target_mac, command)
         params['mac'] = target_mac
         return self._run_command(command, params, mgr)
 
@@ -287,9 +295,13 @@ class Controller(object):
         """
         if not name:
             raise APIError('%s is not a valid name' % str(name))
+        res = None
         for ap in self.get_aps():
             if ap.get('state', 0) == 1 and ap.get('name', None) == name:
-                return self.restart_ap(ap['mac'])
+                res = self.restart_ap(ap['mac'])
+                break
+
+        return res
 
     def archive_all_alerts(self):
         """Archive all Alerts"""
@@ -317,9 +329,9 @@ class Controller(object):
         if not download_path:
             download_path = self.create_backup()
 
-        r = self.session.get(self.url + download_path, stream=True)
+        res = self.session.get(self.url + download_path, stream=True)
         with open(target_file, 'wb') as _backfh:
-            return shutil.copyfileobj(r.raw, _backfh)
+            return shutil.copyfileobj(res.raw, _backfh)
 
     def authorize_guest(self, guest_mac, minutes, up_bandwidth=None,
                         down_bandwidth=None, byte_quota=None, ap_mac=None):
@@ -429,11 +441,11 @@ class Controller(object):
         """
         self._mac_cmd(mac, 'force-provision', mgr='devmgr')
 
-    def get_setting(self, section=None, super=False):
+    def get_setting(self, section=None, controller=False):
         """
         Return settings for this site or controller
 
-        :param super: Return only controller-wide settings
+        :param controller: Return only controller-wide settings
         :param section: Only return this/these section(s)
         :return: {section:settings}
         """
@@ -442,15 +454,15 @@ class Controller(object):
         if section and not isinstance(section, (list, tuple)):
             section = [section]
 
-        for s in settings:
-            s_sect = s['key']
-            if (super and 'site_id' in s) or \
-               (not super and 'site_id' not in s) or \
+        for setting in settings:
+            s_sect = setting['key']
+            if (controller and 'site_id' in setting) or \
+               (not controller and 'site_id' not in setting) or \
                (section and s_sect not in section):
                 continue
             for k in ('_id', 'site_id', 'key'):
-                s.pop(k, None)
-            res[s_sect] = s
+                setting.pop(k, None)
+            res[s_sect] = setting
         return res
 
     def update_setting(self, settings):
