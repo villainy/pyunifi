@@ -60,7 +60,7 @@ class Controller:
     """
 
     def __init__(self, host, username, password, port=8443,
-                 version='v5', site_id='default', ssl_verify=True):
+                 version='v5', site_id='default', ssl_verify=True, async=False):
         """
         :param host: the address of the controller host; IP or name
         :param username: the username to log in with
@@ -70,6 +70,7 @@ class Controller:
         :param site_id: the site ID to connect to
         :param ssl_verify: Verify the controllers SSL certificate,
             can also be "path/to/custom_cert.pem"
+        :params async: use requests-futures async session
         """
         if float(version[1:]) < 4:
             raise APIError("%s controllers no longer supported" % version)
@@ -88,7 +89,11 @@ class Controller:
             warnings.simplefilter("default", category=requests.packages.
                                   urllib3.exceptions.InsecureRequestWarning)
 
-        self.session = requests.Session()
+        if async:
+            from requests_futures.sessions import FuturesSession
+            self.session = FuturesSession()
+        else:
+            self.session = requests.Session()
         self.session.verify = ssl_verify
 
         self.log.debug('Controller for %s', self.url)
