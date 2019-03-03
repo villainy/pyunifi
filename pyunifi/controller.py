@@ -60,7 +60,7 @@ class Controller:
     """
 
     def __init__(self, host, username, password, port=8443,
-                 version='v5', site_id='default', ssl_verify=True, async=False):
+                 version='v5', site_id='default', ssl_verify=True, sync=True):
         """
         :param host: the address of the controller host; IP or name
         :param username: the username to log in with
@@ -89,11 +89,11 @@ class Controller:
             warnings.simplefilter("default", category=requests.packages.
                                   urllib3.exceptions.InsecureRequestWarning)
 
-        if async:
+        if sync:
+            self.session = requests.Session()
+        else:
             from requests_futures.sessions import FuturesSession
             self.session = FuturesSession()
-        else:
-            self.session = requests.Session()
         self.session.verify = ssl_verify
 
         self.log.debug('Controller for %s', self.url)
